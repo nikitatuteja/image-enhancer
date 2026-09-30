@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Image Enhancer</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #0f1115; color: #eee; }
+  h1 { text-align: center; }
+  #drop { border: 2px dashed #555; border-radius: 12px; padding: 2rem; text-align: center; cursor: pointer; }
+  #drop:hover { border-color: #7c9cff; }
+  .opts { display: flex; gap: 1.5rem; justify-content: center; align-items: center; margin-top: 1.2rem; flex-wrap: wrap; }
+  select { background: #1a1d24; color: #eee; border: 1px solid #444; border-radius: 8px; padding: .5rem .8rem; font-size: 1rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.5rem; }
+  .card { background: #1a1d24; border-radius: 12px; padding: .75rem; text-align: center; min-height: 120px; }
+  img { max-width: 100%; border-radius: 8px; }
+  button, a.btn { background: #4f6bff; color: #fff; border: 0; padding: .7rem 1.4rem; border-radius: 8px; font-size: 1rem; cursor: pointer; text-decoration: none; display: inline-block; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .actions { text-align: center; margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; }
+  #msg { text-align: center; margin-top: 1rem; color: #ff8a8a; }
+  @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>AI Image Enhancer</h1>
+<div id="drop">Click or drop an image here (JPEG, PNG, WebP, max ~10 MB)</div>
+<input type="file" id="file" accept="image/jpeg,image/png,image/webp" hidden>
+
+<div class="opts">
+  <label>Mode:
+    <select id="mode">
+      <option value="restore">Old photo restore</option>
+      <option value="sharpen">Sharpen only</option>
+      <option value="color">Color &amp; lighting</option>
+      <option value="colorize">Colorize B&amp;W / sepia</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="post" checked> Contrast &amp; sharpen post-process</label>
+</div>
+
+<div class="row">
+  <div class="card"><h3>Original</h3><img id="before" hidden></div>
+  <div class="card"><h3>Enhanced</h3><img id="after" hidden></div>
+</div>
+
+<div class="actions">
+  <button id="go" disabled>Enhance</button>
+  <a class="btn" id="dl" download="enhanced.png" hidden>Download</a>
+</div>
+<p id="msg"></p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let b64 = null, mime = null;
+
+$("drop").onclick = () => $("file").click();
+$("drop").ondragover = (e) => e.preventDefault();
+$("drop").ondrop = (e) => { e.preventDefault(); load(e.dataTransfer.files[0]); };
+$("file").onchange = (e) => load(e.target.files[0]);
+
+function load(f) {
+  $("msg").textContent = "";
+  if (!f) return;
+  if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { $("msg").textContent = "Please choose a JPEG, PNG or WebP image."; return; }
+  if (f.size > 10 * 1024 * 1024) { $("msg").textContent = "File too large (max 10 MB)."; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    mime = f.type;
+    b64 = reader.result.split(",")[1];
+    $("before").src = reader.result; $("before").hidden = false;
+    $("after").hidden = true; $("dl").hidden = true;
+    $("go").disabled = false;
+  };
+  reader.readAsDataURL(f);
+}
+
+$("go").onclick = async () => {
+  $("go").disabled = true; $("go").textContent = "Enhancing… (can take 20-60s)"; $("msg").textContent = "";
+  try {
+    const r = await fetch("/api/enhance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: b64, mimeType: mime, mode: $("mode").value, postProcess: $("post").checked }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Failed");
+    const src = `data:${d.mimeType};base64,${d.image}`;
+    $("after").src = src; $("after").hidden = false;
+    $("dl").href = src; $("dl").hidden = false;
+  } catch (e) {
+    $("msg").textContent = e.message;
+  } finally {
+    $("go").disabled = false; $("go").textContent = "Enhance";
+  }
+};
+</script>
+</body>
+</html>
